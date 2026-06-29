@@ -89,7 +89,10 @@ public class Scheduler {
             domainSnapshots.add(new LinkedHashSet<>(m.domain));
         }
 
-        for (Slot slot : currentMatch.domain) {
+        // LCV: Order candidate slots from least to most constraining
+        List<Slot> orderedSlots = orderByLCV(matchIndex);
+
+        for (Slot slot : orderedSlots) {
 
             currentMatch.assignedSlot = slot;
 
@@ -111,6 +114,63 @@ public class Scheduler {
         }
 
         return false;
+    }
+
+    /**
+     * LCV Heuristic Helper:
+     * Returns the candidate slots of the given match sorted by their LCV score
+     * (ascending: least constraining first). Ties preserve the original domain order.
+     */
+    private List<Slot> orderByLCV(int matchIndex) {
+        List<Slot> candidates = new ArrayList<>(matches.get(matchIndex).domain);
+        // Stable sort: equal-score slots keep their original LinkedHashSet order
+        candidates.sort(Comparator.comparingInt(slot -> computeLCVScore(matchIndex, slot)));
+        return candidates;
+    }
+
+    /**
+     * LCV Score Computation:
+     * Counts how many values would be removed from all unassigned future match domains
+     * if the given slot were assigned to the match at matchIndex.
+     * The computation is purely read-only; no domain is actually modified.
+     */
+    private int computeLCVScore(int matchIndex, Slot candidateSlot) {
+        Match currentMatch = matches.get(matchIndex);
+        int eliminations = 0;
+
+        for (int i = 0; i < matches.size(); i++) {
+            Match futureMatch = matches.get(i);
+
+            // Only consider unassigned matches other than the current one
+            if (i == matchIndex || futureMatch.assignedSlot != null) {
+                continue;
+            }
+
+            boolean hasCommonTeam =
+                    futureMatch.involves(currentMatch.team1) ||
+                            futureMatch.involves(currentMatch.team2);
+
+            boolean bothImportant = currentMatch.isImportant && futureMatch.isImportant;
+
+            for (Slot s : futureMatch.domain) {
+                // Simulate constraint 1: stadium capacity (same slot)
+                if (s.equals(candidateSlot)) {
+                    eliminations++;
+                    continue; // already eliminated; skip further constraint checks
+                }
+                // Simulate constraint 2: team rest (same day, shared team)
+                if (hasCommonTeam && s.day == candidateSlot.day) {
+                    eliminations++;
+                    continue;
+                }
+                // Simulate constraint 3: at most one sensitive match per day
+                if (bothImportant && s.day == candidateSlot.day) {
+                    eliminations++;
+                }
+            }
+        }
+
+        return eliminations;
     }
 
     private boolean forwardCheck(int matchIndex, Slot assignedSlot) {
