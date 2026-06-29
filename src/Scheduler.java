@@ -44,11 +44,38 @@ public class Scheduler {
         }
     }
 
-    private boolean backtrack(int matchIndex) {
+    /**
+     * MRV Heuristic Helper:
+     * Selects the unassigned Match with the minimum remaining values (domain size).
+     */
+    private int selectMRVMatch() {
+        int bestIndex = -1;
+        int minDomainSize = Integer.MAX_VALUE;
+
+        for (int i = 0; i < matches.size(); i++) {
+            Match m = matches.get(i);
+            // Ignore already assigned matches
+            if (m.assignedSlot == null) {
+                int domainSize = m.domain.size();
+                // Strictly less than ensures we preserve the original ordering on ties
+                if (domainSize < minDomainSize) {
+                    minDomainSize = domainSize;
+                    bestIndex = i;
+                }
+            }
+        }
+        return bestIndex;
+    }
+
+    private boolean backtrack(int assignedCount) {
         int N = matches.size();
 
-        if (matchIndex == N)
+        if (assignedCount == N)
             return true; // All matches have been assigned
+
+        // MRV: Select the unassigned Match with the smallest remaining domain
+        int matchIndex = selectMRVMatch();
+        if (matchIndex == -1) return false;
 
         Match currentMatch = matches.get(matchIndex);
 
@@ -67,7 +94,7 @@ public class Scheduler {
             currentMatch.assignedSlot = slot;
 
             if (forwardCheck(matchIndex, slot)) {
-                if (backtrack(matchIndex + 1)) {
+                if (backtrack(assignedCount + 1)) {
                     return true;
                 }
             }
@@ -91,9 +118,14 @@ public class Scheduler {
         Match currentMatch = matches.get(matchIndex);
         int N = matches.size();
 
-        for (int i = matchIndex + 1; i < N; i++) {
+        for (int i = 0; i < N; i++) {
 
             Match futureMatch = matches.get(i);
+
+            // Forward checking only applies to unassigned matches
+            if (i == matchIndex || futureMatch.assignedSlot != null) {
+                continue;
+            }
 
             // 1. Stadium capacity: remove the identical slot
             futureMatch.domain.removeIf(s -> s.equals(assignedSlot));
